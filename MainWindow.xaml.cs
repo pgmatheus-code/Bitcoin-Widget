@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Input;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using System.Runtime.InteropServices;
 using Hardcodet.Wpf.TaskbarNotification;
@@ -58,7 +59,7 @@ public partial class MainWindow : Window
         };
         DispatcherTimer zTimer = new();
 
-        zTimer.Interval = TimeSpan.FromSeconds(0.25);
+        zTimer.Interval = TimeSpan.FromSeconds(5);
 
         zTimer.Tick += (_, _) =>
         {
@@ -80,18 +81,33 @@ public partial class MainWindow : Window
         StatusText.Text = "🔒";
         AtualizarCotacoes();
 
-        // timer do loop
+        // timer do loop das cotacoes
         DispatcherTimer timer = new();
         timer.Interval = TimeSpan.FromSeconds(30);
         timer.Tick += async (_, _) => await AtualizarCotacoes();
         timer.Start();
 
         // icone da bandeja
+        var trayMenu = new ContextMenu();
+
+        var exitItem = new MenuItem
+        {
+            Header = "Exit"
+        };
+
+        exitItem.Click += (_, _) =>
+        {
+            Application.Current.Shutdown();
+        };
+
+        trayMenu.Items.Add(exitItem);
+
         _trayIcon = new TaskbarIcon
         {
             ToolTipText = "Bitcoin Widget",
+            ContextMenu = trayMenu,
             Icon = new System.Drawing.Icon(
-            @"ico\icon.ico")
+                @"ico\icon.ico")
         };
     }
 
