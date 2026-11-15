@@ -1,4 +1,4 @@
-# ₿ Bitcoin Widget for Windows | pgmatheus-code
+# ![Icon](ico/icon.ico) Bitcoin Widget for Windows | pgmatheus-code
 
 Um widget minimalista para Windows que exibe em tempo real:
 
