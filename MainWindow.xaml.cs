@@ -2,33 +2,82 @@
 // Created by pgmat
 // GitHub: https://github.com/pgmatheus-code
 
-using System.Diagnostics;
-using System.Globalization;
+using System.Windows;
 using System.Net.Http;
 using System.Text.Json;
-using System.Windows;
+using System.Diagnostics;
+using System.Globalization;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
+using Hardcodet.Wpf.TaskbarNotification;
 
 namespace Bitcoin_Widget;
 
 public partial class MainWindow : Window
 {
+    // especificidades topmost
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(
+    IntPtr hWnd,
+    IntPtr hWndInsertAfter,
+    int X,
+    int Y,
+    int cx,
+    int cy,
+    uint uFlags);
+    static readonly IntPtr HWND_TOPMOST = new(-1);
+    const uint SWP_NOMOVE = 0x0002;
+    const uint SWP_NOSIZE = 0x0001;
+    const uint SWP_SHOWWINDOW = 0x0040;
+
+    // variavies comuns
     private readonly HttpClient _http = new();
     private bool _travado = true;
+    private TaskbarIcon _trayIcon;
 
     public MainWindow()
     {
+        // startup
         InitializeComponent();
-        StatusText.Text = "🔒";
 
-        //posicionar a aplicação no canto inferior esquerdo
+        //posicionar a aplicação no canto inferior esquerdo       
         Loaded += (_, _) =>
         {
             Left = 0;
             Top = SystemParameters.PrimaryScreenHeight - Height + 5;
+
+            var handle =
+                new System.Windows.Interop.WindowInteropHelper(this).Handle;
+
+            SetWindowPos(
+                handle,
+                HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        };
+        DispatcherTimer zTimer = new();
+
+        zTimer.Interval = TimeSpan.FromSeconds(0.25);
+
+        zTimer.Tick += (_, _) =>
+        {
+            var handle =
+                new System.Windows.Interop.WindowInteropHelper(this).Handle;
+
+            SetWindowPos(
+                handle,
+                HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         };
 
+        zTimer.Start();
+
+        // esconder da taskbar
+        ShowInTaskbar = false;
+
+        StatusText.Text = "🔒";
         AtualizarCotacoes();
 
         // timer do loop
@@ -36,6 +85,14 @@ public partial class MainWindow : Window
         timer.Interval = TimeSpan.FromSeconds(30);
         timer.Tick += async (_, _) => await AtualizarCotacoes();
         timer.Start();
+
+        // icone da bandeja
+        _trayIcon = new TaskbarIcon
+        {
+            ToolTipText = "Bitcoin Widget",
+            Icon = new System.Drawing.Icon(
+            @"ico\icon.ico")
+        };
     }
 
     private async Task AtualizarCotacoes()
@@ -61,7 +118,7 @@ public partial class MainWindow : Window
                 CultureInfo.InvariantCulture);
 
             BtcText.Text = $"BTC/USD {btcUsd:N0}";
-            UsdText.Text = $"USD/BRL$ {usdBrl:N2}";
+            UsdText.Text = $"USD/BRL {usdBrl:N2}";
         }
         catch (Exception ex)
         {
@@ -102,4 +159,6 @@ public partial class MainWindow : Window
 
         base.OnMouseRightButtonDown(e);
     }
+
+    
 }
