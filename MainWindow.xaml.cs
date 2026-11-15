@@ -2,92 +2,113 @@
 // Created by pgmat
 // GitHub: https://github.com/pgmatheus-code
 
-using System.Windows;
-using System.Net.Http;
-using System.Text.Json;
 using System.Diagnostics;
 using System.Globalization;
-using System.Windows.Input;
-using System.Windows.Controls;
-using System.Windows.Threading;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Hardcodet.Wpf.TaskbarNotification;
 
 namespace Bitcoin_Widget;
 
 public partial class MainWindow : Window
 {
-    // especificidades topmost
-    [DllImport("user32.dll")]
-    static extern bool SetWindowPos(
-    IntPtr hWnd,
-    IntPtr hWndInsertAfter,
-    int X,
-    int Y,
-    int cx,
-    int cy,
-    uint uFlags);
-    static readonly IntPtr HWND_TOPMOST = new(-1);
-    const uint SWP_NOMOVE = 0x0002;
-    const uint SWP_NOSIZE = 0x0001;
-    const uint SWP_SHOWWINDOW = 0x0040;
+    #region Win32
 
-    // variavies comuns
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint flags);
+
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+
+    #endregion
+
+    #region Fields
+
     private readonly HttpClient _http = new();
+
     private bool _travado = true;
+
     private TaskbarIcon _trayIcon;
+
+    #endregion
 
     public MainWindow()
     {
-        // startup
         InitializeComponent();
 
-        //posicionar a aplicação no canto inferior esquerdo       
+        ConfigureWindow();
+        ConfigurePosition();
+        ConfigureTrayIcon();
+        ConfigurePriceUpdater();
+        ConfigureTopMostKeeper();
+
+        StatusText.Text = "🔒";
+
+        _ = AtualizarCotacoes();
+    }
+
+    #region Initialization
+    private void ConfigureWindow()
+    {
+        ShowInTaskbar = false;
+    }
+
+    private void ConfigurePosition()
+    {
         Loaded += (_, _) =>
         {
             Left = 0;
             Top = SystemParameters.PrimaryScreenHeight - Height + 5;
 
-            var handle =
-                new System.Windows.Interop.WindowInteropHelper(this).Handle;
-
-            SetWindowPos(
-                handle,
-                HWND_TOPMOST,
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            ForceTopMost();
         };
+    }
+
+    private void ConfigurePriceUpdater()
+    {
+        DispatcherTimer timer = new();
+
+        timer.Interval = TimeSpan.FromSeconds(30);
+
+        timer.Tick += async (_, _) =>
+        {
+            await AtualizarCotacoes();
+        };
+
+        timer.Start();
+    }
+
+    private void ConfigureTopMostKeeper()
+    {
         DispatcherTimer zTimer = new();
 
         zTimer.Interval = TimeSpan.FromSeconds(5);
 
         zTimer.Tick += (_, _) =>
         {
-            var handle =
-                new System.Windows.Interop.WindowInteropHelper(this).Handle;
-
-            SetWindowPos(
-                handle,
-                HWND_TOPMOST,
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            ForceTopMost();
         };
 
         zTimer.Start();
+    }
 
-        // esconder da taskbar
-        ShowInTaskbar = false;
-
-        StatusText.Text = "🔒";
-        AtualizarCotacoes();
-
-        // timer do loop das cotacoes
-        DispatcherTimer timer = new();
-        timer.Interval = TimeSpan.FromSeconds(30);
-        timer.Tick += async (_, _) => await AtualizarCotacoes();
-        timer.Start();
-
-        // icone da bandeja
+    private void ConfigureTrayIcon()
+    {
         var trayMenu = new ContextMenu();
 
         var exitItem = new MenuItem
@@ -106,32 +127,22 @@ public partial class MainWindow : Window
         {
             ToolTipText = "Bitcoin Widget",
             ContextMenu = trayMenu,
-            Icon = new System.Drawing.Icon(
-                @"ico\icon.ico")
+            Icon = new System.Drawing.Icon(@"ico\icon.ico")
         };
     }
 
+    #endregion
+
+    #region Market Data
     private async Task AtualizarCotacoes()
     {
         try
         {
-            var btcJson = await _http.GetStringAsync(
+            decimal btcUsd = await ObterCotacao(
                 "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
 
-            using var btcDoc = JsonDocument.Parse(btcJson);
-
-            decimal btcUsd = decimal.Parse(
-                btcDoc.RootElement.GetProperty("price").GetString()!,
-                CultureInfo.InvariantCulture);
-
-            var usdJson = await _http.GetStringAsync(
+            decimal usdBrl = await ObterCotacao(
                 "https://api.binance.com/api/v3/ticker/price?symbol=USDTBRL");
-
-            using var usdDoc = JsonDocument.Parse(usdJson);
-
-            decimal usdBrl = decimal.Parse(
-                usdDoc.RootElement.GetProperty("price").GetString()!,
-                CultureInfo.InvariantCulture);
 
             BtcText.Text = $"BTC/USD {btcUsd:N0}";
             UsdText.Text = $"USD/BRL {usdBrl:N2}";
@@ -143,6 +154,38 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<decimal> ObterCotacao(string url)
+    {
+        var json = await _http.GetStringAsync(url);
+
+        using JsonDocument doc = JsonDocument.Parse(json);
+
+        return decimal.Parse(
+            doc.RootElement.GetProperty("price").GetString()!,
+            CultureInfo.InvariantCulture);
+    }
+
+    #endregion
+
+    #region Window Control
+    private void ForceTopMost()
+    {
+        IntPtr handle =
+            new System.Windows.Interop.WindowInteropHelper(this).Handle;
+
+        SetWindowPos(
+            handle,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+
+    #endregion
+
+    #region Mouse Events
     protected override void OnMouseLeftButtonDown(
         MouseButtonEventArgs e)
     {
@@ -154,8 +197,20 @@ public partial class MainWindow : Window
         base.OnMouseLeftButtonDown(e);
     }
 
+    protected override void OnMouseRightButtonDown(
+        MouseButtonEventArgs e)
+    {
+        _travado = !_travado;
+
+        StatusText.Text = _travado
+            ? "🔒"
+            : "🔓";
+
+        base.OnMouseRightButtonDown(e);
+    }
+
     protected override void OnMouseDoubleClick(
-    System.Windows.Input.MouseButtonEventArgs e)
+        MouseButtonEventArgs e)
     {
         Process.Start(
             new ProcessStartInfo
@@ -163,18 +218,9 @@ public partial class MainWindow : Window
                 FileName = "https://www.tradingview.com/symbols/BTCUSD/",
                 UseShellExecute = true
             });
+
+        base.OnMouseDoubleClick(e);
     }
 
-    protected override void OnMouseRightButtonDown(
-    MouseButtonEventArgs e)
-    {
-        _travado = !_travado;
-
-        StatusText.Text =
-            _travado ? "🔒" : "🔓";
-
-        base.OnMouseRightButtonDown(e);
-    }
-
-    
+    #endregion
 }
